@@ -1393,14 +1393,29 @@ function grandTotal(){ return BIDANG.reduce((s,b)=>s+rabTotal(b.id),0); }
 function kontribusiTotal(){ return BIDANG.reduce((s,b)=>s+(state.rab[b.id].kontribusi||0),0); }
 
 /* ================= NAV ================= */
+// Ingat tab/menu terakhir yang dibuka (disimpan per-browser lewat localStorage) supaya
+// saat halaman di-refresh, tampilan tidak selalu kembali ke Dashboard.
+const LAST_VIEW_KEY = 'lks2027_lastView';
+function switchToView(viewName){
+  const item = document.querySelector('.navitem[data-view="'+viewName+'"]');
+  const view = document.getElementById('view-'+viewName);
+  if(!item || !view) return false;
+  document.querySelectorAll('.navitem').forEach(i=>i.classList.remove('active'));
+  item.classList.add('active');
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  view.classList.add('active');
+  try{ localStorage.setItem(LAST_VIEW_KEY, viewName); }catch(e){}
+  return true;
+}
 document.querySelectorAll('.navitem').forEach(item=>{
-  item.addEventListener('click', ()=>{
-    document.querySelectorAll('.navitem').forEach(i=>i.classList.remove('active'));
-    item.classList.add('active');
-    document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
-    document.getElementById('view-'+item.dataset.view).classList.add('active');
-  });
+  item.addEventListener('click', ()=>{ switchToView(item.dataset.view); });
 });
+(function(){
+  try{
+    const saved = localStorage.getItem(LAST_VIEW_KEY);
+    if(saved) switchToView(saved);
+  }catch(e){}
+})();
 
 /* ================= THEME ================= */
 const root = document.documentElement;
