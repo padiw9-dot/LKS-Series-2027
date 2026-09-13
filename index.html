@@ -791,6 +791,21 @@ tbody tr:hover{background:var(--surface-2);}
       <div class="matrix-scroll">
         <table class="matrix" id="vehicleMatrix"></table>
       </div>
+
+      <div class="section-title" style="margin-top:22px;"><i data-lucide="door-open"></i><h2>Kelola Ruang Latihan</h2></div>
+      <div class="panel" style="max-width:640px;">
+        <div class="panel-head"><h3>Tambah Ruang Latihan Baru</h3></div>
+        <div class="info-add-row" style="border-style:solid;">
+          <input type="text" id="ruangNamaBaru" placeholder="Nama ruang (mis. Lab Komputer 2)">
+          <div style="display:flex;justify-content:flex-end;">
+            <button class="btn btn-sm btn-primary" id="btn-add-ruang"><i data-lucide="plus"></i>Tambah Ruang</button>
+          </div>
+        </div>
+      </div>
+      <div class="section-title" style="margin-top:14px;"><i data-lucide="door-open"></i><h2>Ruang Aktif</h2></div>
+      <div id="ruangAktifList" style="display:flex;flex-direction:column;gap:8px;"></div>
+      <div class="section-title" style="margin-top:22px;"><i data-lucide="archive"></i><h2>Ruang Nonaktif</h2></div>
+      <div id="ruangNonaktifList" style="display:flex;flex-direction:column;gap:8px;"></div>
     </section>
 
     <!-- ================= PERALATAN ================= -->
@@ -902,6 +917,15 @@ tbody tr:hover{background:var(--surface-2);}
 
       <div class="section-title" style="margin-top:22px;"><i data-lucide="archive"></i><h2>Cabang Lomba Nonaktif</h2></div>
       <div id="cabangNonaktifList" style="display:flex;flex-direction:column;gap:8px;"></div>
+
+      <div class="section-title" style="margin-top:22px;"><i data-lucide="database-backup"></i><h2>Cadangkan Data</h2></div>
+      <div class="panel" style="max-width:640px;">
+        <div class="panel-head"><h3>Unduh Cadangan Sekarang</h3></div>
+        <p style="padding:0 16px 4px;font-size:12.5px;color:var(--text-muted,#64748b);">Google Sheets sudah otomatis menyimpan riwayat versi (bisa dibuka lewat menu File &gt; Riwayat versi di Google Sheets), tapi ada baiknya sesekali menyimpan cadangan sendiri sebagai jaring pengaman tambahan. Tombol ini mengunduh SELURUH data aplikasi (kontingen, RAB, jadwal, presensi, dll) sebagai satu file JSON.</p>
+        <div class="info-add-row" style="border-style:solid;justify-content:flex-end;">
+          <button class="btn btn-sm btn-primary" id="btn-backup-data"><i data-lucide="download"></i>Unduh Cadangan Data (.json)</button>
+        </div>
+      </div>
     </section>
 
   </main>
@@ -1125,39 +1149,60 @@ function createSheetDb(apiBase){
   function applyLocalWrite(body, resJson){
     const coll = body.collection;
     const arr = (cache[coll] || []).slice();
+    const v = typeof resJson.version === 'number' ? resJson.version : undefined;
     if(body.action === 'add'){
-      const item = {...(body.data||{}), id: resJson.id};
+      const item = {...(body.data||{}), id: resJson.id, ...(v!==undefined?{_v:v}:{})};
       cache[coll] = arr.filter(d=>d.id!==item.id).concat([item]);
     }else if(body.action === 'set'){
-      const item = {...(body.data||{}), id: body.id};
+      const item = {...(body.data||{}), id: body.id, ...(v!==undefined?{_v:v}:{})};
       cache[coll] = arr.filter(d=>d.id!==body.id).concat([item]);
     }else if(body.action === 'update'){
       const idx = arr.findIndex(d=>d.id===body.id);
-      if(idx>-1){ arr[idx] = {...arr[idx], ...(body.data||{}), id: body.id}; cache[coll] = arr; }
-      else{ cache[coll] = arr.concat([{...(body.data||{}), id: body.id}]); }
+      if(idx>-1){ arr[idx] = {...arr[idx], ...(body.data||{}), id: body.id, ...(v!==undefined?{_v:v}:{})}; cache[coll] = arr; }
+      else{ cache[coll] = arr.concat([{...(body.data||{}), id: body.id, ...(v!==undefined?{_v:v}:{})}]); }
     }else if(body.action === 'delete'){
       cache[coll] = arr.filter(d=>d.id!==body.id);
     }
     ready = true;
     notifyAll();
   }
+  // Deteksi tulis-tindih (conflict): setiap dokumen membawa nomor versi ("_v") yang
+  // dikelola server. set()/update() menyertakan versi terakhir yang diketahui klien
+  // (expectedVersion) — kalau server mendapati dokumen sudah berubah sejak itu, ia
+  // menolak permintaan (bukan menimpanya diam-diam) dan kita muat ulang data terbaru
+  // supaya pengguna melihat versi sebenarnya sebelum mencoba lagi.
   async function write(body){
     const res = await fetch(apiBase, {method:'POST', body: JSON.stringify({...body, key: SHEETS_SECRET_KEY})});
     const json = await parseJsonOrExplain(res);
+    if(json && json.conflict){
+      refresh().catch(e=>console.error('sheetDb refresh setelah conflict gagal', e));
+      throw new Error(json.error || 'Data ini baru saja diubah oleh pengguna lain. Data terbaru sudah dimuat ulang, silakan cek lalu coba lagi.');
+    }
     if(!res.ok || (json && json.error)) throw new Error((json && json.error) || ('Gagal menyimpan (HTTP '+res.status+')'));
     applyLocalWrite(body, json);
     return json;
   }
   let initialLoad = refresh();
-  setInterval(()=>{ refresh().catch(e=>console.error('sheetDb poll gagal', e)); }, 9000);
+  // Interval poll diperlonggar dari 9 ke 25 detik untuk mengurangi beban ke kuota
+  // Google Apps Script saat banyak orang membuka aplikasi bersamaan (mis. Technical
+  // Meeting) — trade-off: update dari pengguna lain terlihat sedikit lebih lambat.
+  setInterval(()=>{ refresh().catch(e=>console.error('sheetDb poll gagal', e)); }, 25000);
 
   function makeDocRef(coll,id){
     const path = coll+'/'+id;
     return {
       id, path,
       async get(){ if(!ready){ try{ await initialLoad; }catch(e){} } return toSnap(findDoc(coll,id)); },
-      async set(data){ await write({action:'set', collection:coll, id, data}); },
-      async update(patch){ await write({action:'update', collection:coll, id, data:patch}); },
+      async set(data){
+        const existing = findDoc(coll,id);
+        const expectedVersion = existing && typeof existing._v === 'number' ? existing._v : undefined;
+        await write({action:'set', collection:coll, id, data, ...(expectedVersion!==undefined?{expectedVersion}:{})});
+      },
+      async update(patch){
+        const existing = findDoc(coll,id);
+        const expectedVersion = existing && typeof existing._v === 'number' ? existing._v : undefined;
+        await write({action:'update', collection:coll, id, data:patch, ...(expectedVersion!==undefined?{expectedVersion}:{})});
+      },
       async delete(){ await write({action:'delete', collection:coll, id}); },
       onSnapshot(next, err){
         docListeners[path] = docListeners[path] || [];
@@ -1201,6 +1246,9 @@ function createSheetDb(apiBase){
     // ini SENGAJA tidak menelan error supaya kegagalan (mis. butuh login akun
     // Google sekolah) benar-benar terdeteksi dan badge sinkronisasi jadi akurat.
     async probe(){ await refresh(); },
+    // Dipakai untuk fitur "Cadangkan Data" — mengembalikan salinan PERSIS seluruh
+    // koleksi apa adanya dari server (format sama dengan respons GET Code.gs).
+    async dumpAll(){ if(!ready){ try{ await initialLoad; }catch(e){} } return JSON.parse(JSON.stringify(cache)); },
   };
 }
 
@@ -1362,11 +1410,24 @@ async function writeBidangMaster(newList){
   else{ applyBidangMaster(newList, {rerender:true}); persistLocal(); }
 }
 
-/* ================= RUANG LATIHAN (bisa ditambah sendiri) ================= */
+/* ================= RUANG LATIHAN (bisa ditambah/dinonaktifkan sendiri) =================
+   ROOMS tetap array of string (nama ruang AKTIF saja) supaya kode lama yang sudah
+   memakai ROOMS.map/forEach/some tidak perlu diubah. roomsMaster menyimpan SELURUH
+   ruang (aktif + nonaktif); inactiveRooms adalah turunan untuk panel "Nonaktif".
+   Kompatibel mundur: data lama di settings/rooms berupa array of string (semua
+   dianggap aktif) — dinormalisasi otomatis ke {nama, active} saat dibaca. */
+let roomsMaster = ROOMS.map(nama=>({nama, active:true}));
+let inactiveRooms = [];
+function normalizeRoomsList(list){
+  return (list||[]).map(r=> typeof r === 'string' ? {nama:r, active:true} : {nama:r.nama, active:r.active!==false});
+}
 function applyRoomsList(list, opts){
   opts = opts || {};
-  ROOMS.splice(0, ROOMS.length, ...list);
-  state.roomsList = list;
+  const normalized = normalizeRoomsList(list);
+  roomsMaster = normalized;
+  state.roomsList = normalized;
+  ROOMS.splice(0, ROOMS.length, ...normalized.filter(r=>r.active!==false).map(r=>r.nama));
+  inactiveRooms = normalized.filter(r=>r.active===false).map(r=>r.nama);
   if(opts.rerender){ renderLogistik(); }
 }
 async function writeRoomsList(newList){
@@ -1376,10 +1437,14 @@ async function writeRoomsList(newList){
 async function addRuangLatihan(nama){
   nama = (nama||'').trim();
   if(!nama) throw new Error('Nama ruang tidak boleh kosong');
-  if(ROOMS.some(r=>r.trim().toLowerCase()===nama.toLowerCase())){
+  if(roomsMaster.some(r=>r.nama.trim().toLowerCase()===nama.toLowerCase())){
     throw new Error('Ruang dengan nama ini sudah ada');
   }
-  const newList = ROOMS.concat([nama]);
+  const newList = roomsMaster.concat([{nama, active:true}]);
+  await writeRoomsList(newList);
+}
+async function setRoomActive(nama, active){
+  const newList = roomsMaster.map(r => r.nama===nama ? {...r, active} : r);
   await writeRoomsList(newList);
 }
 async function addBidangLomba(nama){
@@ -1726,23 +1791,25 @@ async function getDownloadsCap(){
   return downloadsCap;
 }
 // Mengembalikan true bila file benar-benar ditawarkan & diterima pengguna, false jika tidak.
+// Helper unduhan generik: coba kapabilitas "downloads" Claude dulu, fallback ke
+// unduhan browser biasa (dipakai saat aplikasi di-hosting di luar Claude, mis.
+// GitHub Pages, karena di sana kapabilitas "downloads" milik Claude tidak ada).
 async function downloadCSV(filename, rows){
   const csv = rows.map(r=>r.map(csvEscape).join(',')).join('\r\n');
   const blob = new Blob(['﻿'+csv], {type:'text/csv;charset=utf-8;'});
+  return downloadBlob(filename, blob);
+}
+async function downloadBlob(filename, blob){
   const cap = await getDownloadsCap();
   if(cap){
-    try{
-      await cap.save({filename, data: blob});
-      return true;
-    }catch(e){
-      if(e && e.code==='declined') return false; // pengguna membatalkan, tidak perlu pesan error
+    try{ await cap.save({filename, data: blob}); return true; }
+    catch(e){
+      if(e && e.code==='declined') return false;
       console.error(e);
       showToast('Gagal mengunduh file: ' + (e && e.message ? e.message : 'coba lagi'));
       return false;
     }
   }
-  // Fallback unduhan browser biasa — dipakai saat aplikasi ini di-hosting di luar Claude
-  // (mis. Netlify/GitHub Pages), karena di sana kapabilitas "downloads" milik Claude tidak ada.
   try{
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -1754,6 +1821,38 @@ async function downloadCSV(filename, rows){
     console.error(e);
     showToast('Gagal mengunduh file: ' + (e && e.message ? e.message : 'coba lagi'));
     return false;
+  }
+}
+/* ================= CADANGKAN DATA (backup manual) =================
+   Google Sheets sudah punya "Version History" bawaan, tapi itu perlu dibuka manual
+   lewat Google Sheets. Fitur ini menambahkan cara cepat: sekali klik, unduh SELURUH
+   data aplikasi (semua koleksi) sebagai satu file JSON — jaring pengaman tambahan
+   yang bisa disimpan di Drive/laptop sendiri secara berkala. */
+async function collectBackupData(){
+  if(db){ return await db.dumpAll(); }
+  return {
+    peserta: state.peserta,
+    pembimbing: state.pembimbing,
+    papanInfo: state.papanInfo,
+    presensi: Object.keys(state.presensi||{}).map(id=>({id, ...(state.presensi[id]||{})})),
+    rab: BIDANG.map(b=>({id:b.id, ...(state.rab[b.id]||{})})),
+    jadwal: BIDANG.map(b=>({id:b.id, ...(state.jadwal[b.id]||{})})),
+    timeline: BIDANG.map(b=>({id:b.id, ...(state.timeline[b.id]||{})})),
+    peralatan: BIDANG.map(b=>({id:b.id, ...(state.peralatan[b.id]||{})})),
+    settings: [{id:'master', list: bidangMaster}, {id:'rooms', list: roomsMaster}],
+  };
+}
+async function backupAllData(){
+  try{
+    const data = await collectBackupData();
+    const stamp = new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
+    const json = JSON.stringify({exportedAt: new Date().toISOString(), data}, null, 2);
+    const blob = new Blob([json], {type:'application/json'});
+    const ok = await downloadBlob(`backup-lks2027-${stamp}.json`, blob);
+    if(ok) showToast('Cadangan data berhasil diunduh');
+  }catch(e){
+    console.error(e);
+    showToast('Gagal membuat cadangan: ' + (e && e.message ? e.message : 'coba lagi'));
   }
 }
 async function exportKontingenCSV(){
@@ -1963,6 +2062,7 @@ function renderLogistik(){
         <select data-jadwal="${b.id}" data-key="ruang">
           <option value="">Belum ditentukan</option>
           ${ROOMS.map(r=>`<option value="${r}" ${j.ruang===r?'selected':''}>${r}</option>`).join('')}
+          ${(j.ruang && !ROOMS.includes(j.ruang)) ? `<option value="${j.ruang}" selected>${j.ruang} (nonaktif)</option>` : ''}
           <option value="__tambah_ruang__">+ Tambah ruang baru...</option>
         </select>
       </div>
@@ -2033,6 +2133,8 @@ function renderLogistik(){
   });
   vBody += '</tbody>';
   document.getElementById('vehicleMatrix').innerHTML = vHead+vBody;
+
+  if(typeof renderRoomManager==='function') renderRoomManager();
 }
 function reportWriteError(e){ console.error(e); showToast('Gagal menyimpan: ' + (e && e.message ? e.message : 'coba lagi')); }
 document.getElementById('schedGrid').addEventListener('change', e=>{
@@ -2720,6 +2822,12 @@ document.getElementById('btn-add-cabang').addEventListener('click', async ()=>{
   finally{ btn.disabled = false; }
 });
 document.getElementById('cabangNamaBaru').addEventListener('keydown', e=>{ if(e.key==='Enter') document.getElementById('btn-add-cabang').click(); });
+document.getElementById('btn-backup-data').addEventListener('click', async ()=>{
+  const btn = document.getElementById('btn-backup-data');
+  btn.disabled = true;
+  try{ await backupAllData(); }
+  finally{ btn.disabled = false; }
+});
 document.getElementById('cabangAktifList').addEventListener('click', async e=>{
   const btn = e.target.closest('[data-deactivate]'); if(!btn) return;
   const id = btn.dataset.deactivate;
@@ -2736,6 +2844,65 @@ document.getElementById('cabangNonaktifList').addEventListener('click', async e=
   const nama = inactiveBidang.find(b=>b.id===id)?.nama || id;
   btn.disabled = true;
   try{ await setBidangActive(id, true); showToast(`"${nama}" diaktifkan kembali`); }
+  catch(err){ showToast('Gagal mengaktifkan: ' + (err && err.message ? err.message : 'coba lagi')); }
+});
+
+/* ================= KELOLA RUANG LATIHAN (nonaktifkan/aktifkan) ================= */
+function roomUsageSummary(nama){
+  const dipakai = BIDANG.filter(b=>state.jadwal[b.id] && state.jadwal[b.id].ruang===nama);
+  return dipakai.length ? `Dipakai oleh ${dipakai.length} bidang lomba` : 'Belum dipakai bidang manapun';
+}
+function renderRoomManager(){
+  const aktifEl = document.getElementById('ruangAktifList');
+  const nonaktifEl = document.getElementById('ruangNonaktifList');
+  if(!aktifEl || !nonaktifEl) return;
+
+  aktifEl.innerHTML = ROOMS.length ? ROOMS.map(nama=>`
+    <div class="cabang-row">
+      <div class="cabang-row-l"><span class="chip-dot" style="background:#94A3B8;width:9px;height:9px;border-radius:99px;flex:none;"></span>
+        <div><b>${nama}</b><span>${roomUsageSummary(nama)}</span></div>
+      </div>
+      <button class="btn btn-sm" data-deactivate-room="${nama}"><i data-lucide="archive"></i>Nonaktifkan</button>
+    </div>`).join('') : `<div class="cabang-empty">Belum ada ruang latihan aktif.</div>`;
+
+  nonaktifEl.innerHTML = inactiveRooms.length ? inactiveRooms.map(nama=>`
+    <div class="cabang-row nonaktif">
+      <div class="cabang-row-l"><span class="chip-dot" style="background:#94A3B8;width:9px;height:9px;border-radius:99px;flex:none;"></span>
+        <div><b>${nama}</b><span>Disembunyikan dari pilihan &middot; jadwal lama yang memakainya tetap tersimpan</span></div>
+      </div>
+      <button class="btn btn-sm btn-primary" data-activate-room="${nama}"><i data-lucide="rotate-ccw"></i>Aktifkan Kembali</button>
+    </div>`).join('') : `<div class="cabang-empty">Tidak ada ruang yang dinonaktifkan.</div>`;
+
+  safeIcons();
+}
+document.getElementById('btn-add-ruang').addEventListener('click', async ()=>{
+  const input = document.getElementById('ruangNamaBaru');
+  const nama = input.value.trim();
+  if(!nama){ input.focus(); return; }
+  const btn = document.getElementById('btn-add-ruang');
+  btn.disabled = true;
+  try{
+    await addRuangLatihan(nama);
+    input.value = '';
+    showToast(db ? 'Ruang latihan baru tersimpan untuk semua pengguna' : 'Ruang latihan baru disimpan (mode lokal)');
+  }catch(e){ showToast(e && e.message ? e.message : 'Gagal menambahkan ruang latihan'); }
+  finally{ btn.disabled = false; }
+});
+document.getElementById('ruangNamaBaru').addEventListener('keydown', e=>{ if(e.key==='Enter') document.getElementById('btn-add-ruang').click(); });
+document.getElementById('ruangAktifList').addEventListener('click', async e=>{
+  const btn = e.target.closest('[data-deactivate-room]'); if(!btn) return;
+  const nama = btn.dataset.deactivateRoom;
+  const lanjut = confirm(`Nonaktifkan ruang "${nama}"? Ruang ini akan disembunyikan dari pilihan dropdown, tapi jadwal yang sudah memakainya tetap tersimpan dan bisa diaktifkan kembali kapan saja.`);
+  if(!lanjut) return;
+  btn.disabled = true;
+  try{ await setRoomActive(nama, false); showToast(`Ruang "${nama}" dinonaktifkan`); }
+  catch(err){ showToast('Gagal menonaktifkan: ' + (err && err.message ? err.message : 'coba lagi')); }
+});
+document.getElementById('ruangNonaktifList').addEventListener('click', async e=>{
+  const btn = e.target.closest('[data-activate-room]'); if(!btn) return;
+  const nama = btn.dataset.activateRoom;
+  btn.disabled = true;
+  try{ await setRoomActive(nama, true); showToast(`Ruang "${nama}" diaktifkan kembali`); }
   catch(err){ showToast('Gagal mengaktifkan: ' + (err && err.message ? err.message : 'coba lagi')); }
 });
 
