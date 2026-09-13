@@ -1056,6 +1056,11 @@ const SHEETS_API_URL_KEY = 'stematelSheetsApiUrl';
 // kompatibel dengan mode itu. Jadi tetap pakai deployment akses "Anyone" di bawah ini;
 // proteksi privasi datanya memakai kata sandi sederhana di Code.gs, bukan pembatasan domain.
 const SHEETS_API_URL_DEFAULT = 'https://script.google.com/macros/s/AKfycbyY6E67Q3SBsSqAci6x81p1FRCOVXRc6R_5hdF3sQeYIe5dy4emJUJErBE4lVtxMTc/exec';
+// Kata sandi sederhana yang harus sama persis dengan SECRET_KEY di Code.gs (backend).
+// Ini bukan keamanan sempurna (kode ini tetap terlihat publik di GitHub Pages), tapi
+// mencegah URL Apps Script ditemukan & dipakai orang lain/bot/mesin pencari secara
+// tidak sengaja, karena tanpa kata sandi ini server akan menolak setiap permintaan.
+const SHEETS_SECRET_KEY = 'JZe9ME42FiG1TgL1ZwXYIPtRJfWgRfZF';
 const SHEETS_API_URL_LOCAL_SENTINEL = '__lokal__';
 function getSheetsApiUrl(){
   try{
@@ -1105,7 +1110,8 @@ function createSheetDb(apiBase){
     }
   }
   async function refresh(){
-    const res = await fetch(apiBase + (apiBase.indexOf('?')>-1?'&':'?') + 'action=all');
+    const url = apiBase + (apiBase.indexOf('?')>-1?'&':'?') + 'action=all&key=' + encodeURIComponent(SHEETS_SECRET_KEY);
+    const res = await fetch(url);
     if(!res.ok) throw new Error('Gagal memuat data (HTTP '+res.status+')');
     const json = await parseJsonOrExplain(res);
     if(json && json.error) throw new Error(json.error);
@@ -1136,7 +1142,7 @@ function createSheetDb(apiBase){
     notifyAll();
   }
   async function write(body){
-    const res = await fetch(apiBase, {method:'POST', body: JSON.stringify(body)});
+    const res = await fetch(apiBase, {method:'POST', body: JSON.stringify({...body, key: SHEETS_SECRET_KEY})});
     const json = await parseJsonOrExplain(res);
     if(!res.ok || (json && json.error)) throw new Error((json && json.error) || ('Gagal menyimpan (HTTP '+res.status+')'));
     applyLocalWrite(body, json);
