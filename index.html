@@ -1049,7 +1049,12 @@ const SHEETS_API_URL_KEY = 'stematelSheetsApiUrl';
 // URL bawaan (default) Web App Google Apps Script milik sekolah — dipakai otomatis
 // oleh SIAPA PUN yang membuka link ini, tanpa perlu diatur manual per perangkat.
 // Klik badge sinkronisasi di sidebar untuk mengganti (mis. saat testing/migrasi).
-const SHEETS_API_URL_DEFAULT = 'https://script.google.com/macros/s/AKfycbyY6E67Q3SBsSqAci6x81p1FRCOVXRc6R_5hdF3sQeYIe5dy4emJUJErBE4lVtxMTc/exec';
+//
+// CADANGAN (kalau deployment dibatasi-domain di bawah ini ternyata bermasalah karena
+// batasan cookie lintas-domain browser, tinggal kembalikan baris SHEETS_API_URL_DEFAULT
+// ke URL akses "Anyone" ini):
+// const SHEETS_API_URL_DEFAULT = 'https://script.google.com/macros/s/AKfycbyY6E67Q3SBsSqAci6x81p1FRCOVXRc6R_5hdF3sQeYIe5dy4emJUJErBE4lVtxMTc/exec';
+const SHEETS_API_URL_DEFAULT = 'https://script.google.com/a/macros/smktelkom-pwt.sch.id/s/AKfycbyPGNDBg7Ex8RxtmLMnAXDfqOiXnX0ErgJaKAh0Ltsg_7n68-2dvYiloSJPiIP3gi0/exec';
 const SHEETS_API_URL_LOCAL_SENTINEL = '__lokal__';
 function getSheetsApiUrl(){
   try{
@@ -1084,21 +1089,56 @@ function createSheetDb(apiBase){
       (docListeners[path]||[]).forEach(l=>{ try{ l.next(snap); }catch(e){ console.error(e); } });
     });
   }
+  // Membaca respons sebagai JSON. Kalau Apps Script dibatasi ke akun Google domain
+  // sekolah dan browser ini belum/tidak login dengan akun itu, Google akan mengembalikan
+  // halaman login (HTML) alih-alih JSON — deteksi kasus ini dan beri pesan yang jelas
+  // alih-alih error teknis membingungkan ("Unexpected token '<'").
+  async function parseJsonOrExplain(res){
+    const text = await res.text();
+    try{ return JSON.parse(text); }
+    catch(e){
+      if(/accounts\.google\.com|<html/i.test(text)){
+        throw new Error('Perlu login ke akun Google sekolah (@smktelkom-pwt.sch.id) di browser ini terlebih dahulu, lalu muat ulang halaman.');
+      }
+      throw new Error('Respons server tidak dikenali.');
+    }
+  }
   async function refresh(){
-    const res = await fetch(apiBase + (apiBase.indexOf('?')>-1?'&':'?') + 'action=all');
+    const res = await fetch(apiBase + (apiBase.indexOf('?')>-1?'&':'?') + 'action=all', {credentials:'include'});
     if(!res.ok) throw new Error('Gagal memuat data (HTTP '+res.status+')');
-    const json = await res.json();
+    const json = await parseJsonOrExplain(res);
     if(json && json.error) throw new Error(json.error);
     Object.keys(json||{}).forEach(k=>{ cache[k] = Array.isArray(json[k]) ? json[k] : []; });
     ready = true;
     notifyAll();
   }
+  // Terapkan hasil tulis ke cache LOKAL langsung (tanpa fetch ulang ke server) supaya
+  // simpan/edit/hapus terasa instan — poll berkala (setInterval di bawah) tetap berjalan
+  // di latar belakang setiap 9 detik untuk menyamakan dengan perubahan dari pengguna lain.
+  function applyLocalWrite(body, resJson){
+    const coll = body.collection;
+    const arr = (cache[coll] || []).slice();
+    if(body.action === 'add'){
+      const item = {...(body.data||{}), id: resJson.id};
+      cache[coll] = arr.filter(d=>d.id!==item.id).concat([item]);
+    }else if(body.action === 'set'){
+      const item = {...(body.data||{}), id: body.id};
+      cache[coll] = arr.filter(d=>d.id!==body.id).concat([item]);
+    }else if(body.action === 'update'){
+      const idx = arr.findIndex(d=>d.id===body.id);
+      if(idx>-1){ arr[idx] = {...arr[idx], ...(body.data||{}), id: body.id}; cache[coll] = arr; }
+      else{ cache[coll] = arr.concat([{...(body.data||{}), id: body.id}]); }
+    }else if(body.action === 'delete'){
+      cache[coll] = arr.filter(d=>d.id!==body.id);
+    }
+    ready = true;
+    notifyAll();
+  }
   async function write(body){
-    const res = await fetch(apiBase, {method:'POST', body: JSON.stringify(body)});
-    let json = null;
-    try{ json = await res.json(); }catch(e){}
+    const res = await fetch(apiBase, {method:'POST', body: JSON.stringify(body), credentials:'include'});
+    const json = await parseJsonOrExplain(res);
     if(!res.ok || (json && json.error)) throw new Error((json && json.error) || ('Gagal menyimpan (HTTP '+res.status+')'));
-    await refresh();
+    applyLocalWrite(body, json);
     return json;
   }
   let initialLoad = refresh();
@@ -1150,6 +1190,10 @@ function createSheetDb(apiBase){
   return {
     doc(path){ const i = path.indexOf('/'); return makeDocRef(path.slice(0,i), path.slice(i+1)); },
     collection(name){ return makeCollRef(name); },
+    // Dipakai KHUSUS untuk cek koneksi awal (initDb) — beda dari .get() biasa,
+    // ini SENGAJA tidak menelan error supaya kegagalan (mis. butuh login akun
+    // Google sekolah) benar-benar terdeteksi dan badge sinkronisasi jadi akurat.
+    async probe(){ await refresh(); },
   };
 }
 
@@ -1188,6 +1232,7 @@ try{
     // terjadi error saat merender.
     const savedBidangList = (Array.isArray(state.bidangMaster) && state.bidangMaster.length) ? state.bidangMaster : bidangMaster;
     applyBidangMaster(savedBidangList, {rerender:false});
+    if(Array.isArray(state.roomsList) && state.roomsList.length){ applyRoomsList(state.roomsList, {rerender:false}); }
   }
 }catch(e){}
 function persistLocal(){ try{ localStorage.setItem('lks2027_state_v2', JSON.stringify(state)); }catch(e){} }
@@ -1230,7 +1275,7 @@ async function initDb(){
   if(apiUrl){
     try{
       const candidate = createSheetDb(apiUrl);
-      await withTimeout(candidate.collection('peserta').where('__probe','==','__probe').get(), 12000);
+      await withTimeout(candidate.probe(), 12000);
       db = candidate;
     }catch(e){ console.error('Gagal terhubung ke database Sheets', e); db = null; }
   }else{
@@ -1257,6 +1302,11 @@ async function initDb(){
       applyBidangMaster(list, {rerender:true});
       ensureBidangDocSubscriptions();
     }, err=>console.error('settings/master', err));
+
+    db.doc('settings/rooms').onSnapshot(snap=>{
+      const list = (snap.exists && Array.isArray(snap.data().list) && snap.data().list.length) ? snap.data().list : ROOMS.slice();
+      applyRoomsList(list, {rerender:true});
+    }, err=>console.error('settings/rooms', err));
 
     db.collection('papanInfo').onSnapshot(snap=>{
       state.papanInfo = snap.docs.map(d=>({id:d.id, ...d.data()}));
@@ -1303,6 +1353,27 @@ function ensureBidangDocSubscriptions(){
 async function writeBidangMaster(newList){
   if(db){ await withTimeout(db.doc('settings/master').set({list:newList})); }
   else{ applyBidangMaster(newList, {rerender:true}); persistLocal(); }
+}
+
+/* ================= RUANG LATIHAN (bisa ditambah sendiri) ================= */
+function applyRoomsList(list, opts){
+  opts = opts || {};
+  ROOMS.splice(0, ROOMS.length, ...list);
+  state.roomsList = list;
+  if(opts.rerender){ renderLogistik(); }
+}
+async function writeRoomsList(newList){
+  if(db){ await withTimeout(db.doc('settings/rooms').set({list:newList})); }
+  else{ applyRoomsList(newList, {rerender:true}); persistLocal(); }
+}
+async function addRuangLatihan(nama){
+  nama = (nama||'').trim();
+  if(!nama) throw new Error('Nama ruang tidak boleh kosong');
+  if(ROOMS.some(r=>r.trim().toLowerCase()===nama.toLowerCase())){
+    throw new Error('Ruang dengan nama ini sudah ada');
+  }
+  const newList = ROOMS.concat([nama]);
+  await writeRoomsList(newList);
 }
 async function addBidangLomba(nama){
   nama = (nama||'').trim();
@@ -1885,6 +1956,7 @@ function renderLogistik(){
         <select data-jadwal="${b.id}" data-key="ruang">
           <option value="">Belum ditentukan</option>
           ${ROOMS.map(r=>`<option value="${r}" ${j.ruang===r?'selected':''}>${r}</option>`).join('')}
+          <option value="__tambah_ruang__">+ Tambah ruang baru...</option>
         </select>
       </div>
       <div class="sched-field">
@@ -1958,7 +2030,22 @@ function renderLogistik(){
 function reportWriteError(e){ console.error(e); showToast('Gagal menyimpan: ' + (e && e.message ? e.message : 'coba lagi')); }
 document.getElementById('schedGrid').addEventListener('change', e=>{
   const sel = e.target.closest('select[data-jadwal]');
-  if(sel){ writeJadwal(sel.dataset.jadwal, {[sel.dataset.key]: sel.value || null}).catch(reportWriteError); return; }
+  if(sel){
+    if(sel.dataset.key==='ruang' && sel.value==='__tambah_ruang__'){
+      const bid = sel.dataset.jadwal;
+      const nama = window.prompt('Nama ruang latihan baru (mis. Lab Komputer 2):', '');
+      if(nama && nama.trim()){
+        addRuangLatihan(nama.trim())
+          .then(()=>writeJadwal(bid, {ruang: nama.trim()}))
+          .then(()=>showToast('Ruang latihan baru ditambahkan & dipakai'))
+          .catch(err=>{ showToast(err && err.message ? err.message : 'Gagal menambah ruang'); renderLogistik(); });
+      }else{
+        renderLogistik(); // batal — kembalikan tampilan dropdown ke pilihan sebelumnya
+      }
+      return;
+    }
+    writeJadwal(sel.dataset.jadwal, {[sel.dataset.key]: sel.value || null}).catch(reportWriteError); return;
+  }
   const txt = e.target.closest('input[data-jadwaltext]');
   if(txt){ writeJadwal(txt.dataset.jadwaltext, {[txt.dataset.key]: txt.value.trim() || null}).catch(reportWriteError); return; }
   const chk = e.target.closest('input[data-jadwalday]');
