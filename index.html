@@ -503,24 +503,113 @@ tbody tr:hover{background:var(--surface-2);}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
 .toast svg{width:15px;height:15px;color:var(--good);}
 
-/* ============ MOBILE NAV ============ */
+/* ============ MOBILE TOP BAR + DRAWER NAVIGASI ============
+   Menggantikan strip nav horizontal lama (sempit & menyembunyikan badge sinkronisasi
+   + pilihan tema). Di layar sempit: bar atas ramping (hamburger + brand + status
+   sinkronisasi ringkas) selalu terlihat; menekan hamburger membuka .rail sebagai
+   drawer yang meluncur dari kiri, berisi navigasi LENGKAP + tema + info sekolah —
+   persis konten sidebar desktop, cuma disembunyikan di balik tombol menu. */
+.mobile-topbar{display:none;}
+.rail-backdrop{display:none;}
+.rail-close-btn{display:none;}
+.sync-badge-mini{display:none;}
 @media (max-width: 880px){
   .shell{flex-direction:column;}
-  .rail{
-    position:sticky;top:0;width:100%;height:auto;flex-direction:row;overflow-x:auto;overflow-y:hidden;padding:10px 12px;
-    border-right:none;border-bottom:1px solid var(--border);gap:6px;z-index:20;
+  .mobile-topbar{
+    display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:30;
+    background:var(--surface);border-bottom:1px solid var(--border);padding:10px 14px;
+    padding-top:max(10px, env(safe-area-inset-top));
   }
-  .brand,.rail-foot,.theme-toggle,.navlabel{display:none;}
-  .navgroup{display:flex;gap:6px;margin-top:0;}
-  .navitem{flex:none;}
-  .main{padding:18px 16px 50px;}
+  .mobile-menu-btn{
+    width:40px;height:40px;border-radius:11px;border:1px solid var(--border);background:var(--surface-2);
+    display:flex;align-items:center;justify-content:center;flex:none;cursor:pointer;color:var(--text);
+  }
+  .mobile-menu-btn svg{width:19px;height:19px;}
+  .mobile-brand{display:flex;align-items:center;gap:9px;flex:1;min-width:0;}
+  .mobile-brand .brand-mark{width:30px;height:30px;font-size:11px;}
+  .mobile-brand b{font-family:var(--font-display);font-size:13.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .sync-badge-mini{
+    display:flex;width:34px;height:34px;border-radius:50%;align-items:center;justify-content:center;flex:none;
+    background:var(--surface-2);color:var(--text-faint);cursor:pointer;
+  }
+  .sync-badge-mini svg{width:16px;height:16px;}
+  .sync-badge-mini.shared{background:var(--good-soft);color:var(--good);}
+  .sync-badge-mini.local{background:var(--warn-soft);color:var(--warn);}
+
+  .rail-backdrop{
+    display:block;position:fixed;inset:0;background:rgba(10,13,22,.5);z-index:39;
+    opacity:0;pointer-events:none;transition:opacity .2s;
+  }
+  .rail-backdrop.show{opacity:1;pointer-events:auto;}
+
+  .rail{
+    position:fixed;top:0;left:0;height:100vh;width:min(82vw,300px);z-index:40;
+    transform:translateX(-100%);transition:transform .25s ease;box-shadow:var(--shadow);
+    flex-direction:column;overflow-y:auto;padding:18px 14px;padding-top:max(18px, env(safe-area-inset-top));
+  }
+  .rail.open{transform:translateX(0);}
+  .rail .brand{position:relative;}
+  .rail-close-btn{
+    display:flex;margin-left:auto;width:30px;height:30px;border-radius:9px;border:1px solid var(--border);
+    background:var(--surface-2);align-items:center;justify-content:center;cursor:pointer;flex:none;color:var(--text);
+  }
+  .rail-close-btn svg{width:14px;height:14px;}
+  .navgroup{display:flex;flex-direction:column;margin-top:0;}
+  .navitem{padding:12px 11px;font-size:14px;}
+  .navitem svg{width:19px;height:19px;}
+
+  .main{padding:16px 16px 90px;}
   .kpis{grid-template-columns:1fr 1fr;}
   .grid-2{grid-template-columns:1fr;}
   .ai-grid{grid-template-columns:1fr;}
   .field-row{grid-template-columns:1fr;}
+
+  /* Sasaran sentuh lebih besar & nyaman untuk jari di layar sempit */
+  .btn{padding:11px 15px;font-size:13.5px;}
+  .btn-sm{padding:9px 13px;font-size:12.5px;}
+  .btn svg{width:16px;height:16px;}
+  .field input,.field select,.info-add-row input,.info-add-row textarea{padding:11px 12px;font-size:15px;}
+  .status-btn{padding:9px 13px;font-size:12.5px;}
+  .row-action{width:32px;height:32px;}
+  .row-action svg{width:15px;height:15px;}
+  .topbar h1{font-size:19px;}
+  .topbar-actions{width:100%;}
+  .topbar-actions .btn{flex:1;justify-content:center;}
+
+  /* Modal jadi lembar penuh layar (bottom sheet) di mobile — lebih nyaman untuk
+     mengisi form dibanding kotak mengambang kecil di tengah layar sempit. */
+  .modal-overlay{padding:0;align-items:flex-end;}
+  .modal{
+    max-width:100%;width:100%;max-height:92vh;border-radius:20px 20px 0 0;
+    display:flex;flex-direction:column;animation:sheet-up .22s ease;
+  }
+  @keyframes sheet-up{from{transform:translateY(24px);opacity:.6;}to{transform:none;opacity:1;}}
+  .modal-body{flex:1;overflow-y:auto;}
+  .modal-foot{
+    position:sticky;bottom:0;background:var(--surface);padding-bottom:max(16px, env(safe-area-inset-bottom));
+  }
+  .modal-foot .btn{flex:1;justify-content:center;padding:13px;}
 }
 @media (max-width:520px){
   .kpis{grid-template-columns:1fr;}
+}
+
+/* ============ PRESENSI TABLE -> KARTU DI LAYAR SEMPIT ============
+   Presensi sering diisi langsung dari HP saat latihan berlangsung, jadi ini salah
+   satu tabel yang paling penting untuk terasa nyaman disentuh di layar kecil. */
+@media (max-width:700px){
+  #presGuruPanel .table-scroll{overflow-x:visible;border:none;}
+  #presGuruPanel table{min-width:0;border:none;}
+  #presGuruPanel table, #presTableBody{display:block;width:100%;}
+  #presTableBody tr{
+    display:block;width:100%;box-sizing:border-box;margin-bottom:10px;padding:12px 13px;
+    background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-m);box-shadow:var(--shadow);
+  }
+  #presGuruPanel table thead{display:none;}
+  #presTableBody td{display:block;padding:4px 0;border-bottom:none;}
+  #presTableBody td:first-child{margin-bottom:2px;}
+  #presTableBody .status-btns{margin-top:8px;justify-content:stretch;}
+  #presTableBody .status-btns .status-btn{flex:1;text-align:center;}
 }
 
 /* ============ KONTINGEN TABLE -> KARTU DI LAYAR SEMPIT ============ */
@@ -555,10 +644,18 @@ tbody tr:hover{background:var(--surface-2);}
 </style>
 
 <div class="shell">
-  <nav class="rail">
+  <!-- Bar atas khusus mobile: tombol menu (buka drawer navigasi) + brand + badge sinkronisasi ringkas -->
+  <div class="mobile-topbar">
+    <button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="Buka menu"><i data-lucide="menu"></i></button>
+    <div class="mobile-brand"><div class="brand-mark">SF</div><b>STEMATEL FORWARD</b></div>
+    <span class="sync-badge sync-badge-mini" id="syncBadgeMini"><i data-lucide="loader"></i></span>
+  </div>
+  <div class="rail-backdrop" id="railBackdrop"></div>
+  <nav class="rail" id="railNav">
     <div class="brand">
       <div class="brand-mark">SF</div>
       <div class="brand-text"><b>STEMATEL FORWARD</b><span>LKS Series 2027</span></div>
+      <button class="rail-close-btn" id="railCloseBtn" aria-label="Tutup menu"><i data-lucide="x"></i></button>
     </div>
     <div class="navgroup" id="navgroup">
       <div class="navitem active" data-view="dashboard"><i data-lucide="layout-dashboard"></i>Dashboard</div>
@@ -1294,15 +1391,20 @@ function persistLocal(){ try{ localStorage.setItem('lks2027_state_v2', JSON.stri
 
 function setSyncBadge(mode){
   const el = document.getElementById('syncBadge'); if(!el) return;
-  if(mode==='shared'){ el.innerHTML = '<i data-lucide="cloud"></i>Tersimpan bersama (tanpa login)'; el.className='sync-badge shared'; el.title='Klik untuk mengganti alamat database Google Sheets'; }
-  else if(mode==='local'){ el.innerHTML = '<i data-lucide="laptop"></i>Mode lokal (browser ini saja) — klik utk sambungkan'; el.className='sync-badge local'; el.title='Klik untuk memasang alamat database Google Sheets'; }
-  else if(mode==='error'){ el.innerHTML = '<i data-lucide="alert-triangle"></i>Gagal terhubung — klik utk cek alamat'; el.className='sync-badge local'; el.title='Klik untuk memeriksa/mengganti alamat database Google Sheets'; }
-  else { el.innerHTML = '<i data-lucide="loader"></i>Menghubungkan...'; el.className='sync-badge'; }
+  const mini = document.getElementById('syncBadgeMini');
+  let icon, cls, title;
+  if(mode==='shared'){ icon='cloud'; cls='shared'; title='Tersimpan bersama — klik untuk mengganti alamat database'; el.innerHTML = '<i data-lucide="cloud"></i>Tersimpan bersama (tanpa login)'; el.className='sync-badge shared'; el.title='Klik untuk mengganti alamat database Google Sheets'; }
+  else if(mode==='local'){ icon='laptop'; cls='local'; title='Mode lokal — klik untuk sambungkan'; el.innerHTML = '<i data-lucide="laptop"></i>Mode lokal (browser ini saja) — klik utk sambungkan'; el.className='sync-badge local'; el.title='Klik untuk memasang alamat database Google Sheets'; }
+  else if(mode==='error'){ icon='alert-triangle'; cls='local'; title='Gagal terhubung — klik untuk cek alamat'; el.innerHTML = '<i data-lucide="alert-triangle"></i>Gagal terhubung — klik utk cek alamat'; el.className='sync-badge local'; el.title='Klik untuk memeriksa/mengganti alamat database Google Sheets'; }
+  else { icon='loader'; cls=''; title='Menghubungkan...'; el.innerHTML = '<i data-lucide="loader"></i>Menghubungkan...'; el.className='sync-badge'; }
+  if(mini){ mini.innerHTML = `<i data-lucide="${icon}"></i>`; mini.className = 'sync-badge sync-badge-mini' + (cls?' '+cls:''); mini.title = title; }
   safeIcons();
 }
 (function(){
   const el = document.getElementById('syncBadge');
   if(el) el.addEventListener('click', promptSheetsApiUrl);
+  const mini = document.getElementById('syncBadgeMini');
+  if(mini) mini.addEventListener('click', promptSheetsApiUrl);
 })();
 function promptSheetsApiUrl(){
   const current = getSheetsApiUrl();
@@ -1551,7 +1653,7 @@ function switchToView(viewName){
   return true;
 }
 document.querySelectorAll('.navitem').forEach(item=>{
-  item.addEventListener('click', ()=>{ switchToView(item.dataset.view); });
+  item.addEventListener('click', ()=>{ switchToView(item.dataset.view); closeMobileDrawer(); });
 });
 (function(){
   try{
@@ -1559,6 +1661,25 @@ document.querySelectorAll('.navitem').forEach(item=>{
     if(saved) switchToView(saved);
   }catch(e){}
 })();
+
+/* ================= DRAWER NAVIGASI MOBILE =================
+   Di layar sempit, .rail (sidebar) disembunyikan jadi panel yang meluncur dari kiri
+   (drawer) dibuka lewat tombol hamburger di bar atas — pola navigasi standar aplikasi
+   mobile modern, sekaligus mengembalikan akses ke badge sinkronisasi & pilihan tema
+   yang sebelumnya hilang total di layar sempit (dulu di-`display:none`-kan).*/
+function openMobileDrawer(){
+  document.getElementById('railNav').classList.add('open');
+  document.getElementById('railBackdrop').classList.add('show');
+  document.body.style.overflow = 'hidden';
+}
+function closeMobileDrawer(){
+  document.getElementById('railNav').classList.remove('open');
+  document.getElementById('railBackdrop').classList.remove('show');
+  document.body.style.overflow = '';
+}
+document.getElementById('mobileMenuBtn').addEventListener('click', openMobileDrawer);
+document.getElementById('railCloseBtn').addEventListener('click', closeMobileDrawer);
+document.getElementById('railBackdrop').addEventListener('click', closeMobileDrawer);
 
 /* ================= THEME ================= */
 const root = document.documentElement;
