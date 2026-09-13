@@ -1050,11 +1050,12 @@ const SHEETS_API_URL_KEY = 'stematelSheetsApiUrl';
 // oleh SIAPA PUN yang membuka link ini, tanpa perlu diatur manual per perangkat.
 // Klik badge sinkronisasi di sidebar untuk mengganti (mis. saat testing/migrasi).
 //
-// CADANGAN (kalau deployment dibatasi-domain di bawah ini ternyata bermasalah karena
-// batasan cookie lintas-domain browser, tinggal kembalikan baris SHEETS_API_URL_DEFAULT
-// ke URL akses "Anyone" ini):
-// const SHEETS_API_URL_DEFAULT = 'https://script.google.com/macros/s/AKfycbyY6E67Q3SBsSqAci6x81p1FRCOVXRc6R_5hdF3sQeYIe5dy4emJUJErBE4lVtxMTc/exec';
-const SHEETS_API_URL_DEFAULT = 'https://script.google.com/a/macros/smktelkom-pwt.sch.id/s/AKfycbyPGNDBg7Ex8RxtmLMnAXDfqOiXnX0ErgJaKAh0Ltsg_7n68-2dvYiloSJPiIP3gi0/exec';
+// CATATAN: deployment "Anyone within domain" TERNYATA TIDAK BISA dipakai lewat fetch()
+// dari halaman yang di-hosting di luar Google (GitHub Pages dst.) — browser memblokir
+// permintaan ber-cookie (credentials) ke Apps Script karena header CORS bawaannya tidak
+// kompatibel dengan mode itu. Jadi tetap pakai deployment akses "Anyone" di bawah ini;
+// proteksi privasi datanya memakai kata sandi sederhana di Code.gs, bukan pembatasan domain.
+const SHEETS_API_URL_DEFAULT = 'https://script.google.com/macros/s/AKfycbyY6E67Q3SBsSqAci6x81p1FRCOVXRc6R_5hdF3sQeYIe5dy4emJUJErBE4lVtxMTc/exec';
 const SHEETS_API_URL_LOCAL_SENTINEL = '__lokal__';
 function getSheetsApiUrl(){
   try{
@@ -1104,7 +1105,7 @@ function createSheetDb(apiBase){
     }
   }
   async function refresh(){
-    const res = await fetch(apiBase + (apiBase.indexOf('?')>-1?'&':'?') + 'action=all', {credentials:'include'});
+    const res = await fetch(apiBase + (apiBase.indexOf('?')>-1?'&':'?') + 'action=all');
     if(!res.ok) throw new Error('Gagal memuat data (HTTP '+res.status+')');
     const json = await parseJsonOrExplain(res);
     if(json && json.error) throw new Error(json.error);
@@ -1135,7 +1136,7 @@ function createSheetDb(apiBase){
     notifyAll();
   }
   async function write(body){
-    const res = await fetch(apiBase, {method:'POST', body: JSON.stringify(body), credentials:'include'});
+    const res = await fetch(apiBase, {method:'POST', body: JSON.stringify(body)});
     const json = await parseJsonOrExplain(res);
     if(!res.ok || (json && json.error)) throw new Error((json && json.error) || ('Gagal menyimpan (HTTP '+res.status+')'));
     applyLocalWrite(body, json);
